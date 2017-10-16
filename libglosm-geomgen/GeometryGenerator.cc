@@ -30,6 +30,7 @@
 #include <list>
 #include <cstdlib>
 #include <cstdio>
+#include <iostream>
 
 typedef std::list<Vector2i> VertexList;
 typedef std::vector<Vector2i> VertexVector;
@@ -606,13 +607,25 @@ static void CreatePowerLine(Geometry& geom, const VertexVector& vertices, const 
 	}
 }
 
+void dumpBuilding(OsmDatasource::Way const& way)
+{
+    std::cerr << "{";
+    for(OsmDatasource::TagsMap::const_iterator it=way.Tags.begin(); it!=way.Tags.end(); ++it)
+    {
+        std::cerr << "\"" << it->first << "\" => \"" << it->second << "\", ";
+    }
+    std::cerr << "}\n";
+}
+
 static float GetMaxHeight(const OsmDatasource::Way& way) {
 	OsmDatasource::TagsMap::const_iterator building, tag;
 
 	if ((tag = way.Tags.find("building:part:height")) != way.Tags.end()) {
+//        std::cerr << "Found building:part:height: "; dumpBuilding(way); std::cerr << "\n";
 		/* building:part:height is topmost precedence (hack for Ostankino tower) */
 		return strtof(tag->second.c_str(), NULL);
 	} else if ((tag = way.Tags.find("height")) != way.Tags.end()) {
+//        std::cerr << "Found height: " << strtof(tag->second.c_str(), NULL) << ": "; dumpBuilding(way); std::cerr << "\n";
 		/* explicit height - topmost precedence in all other cases */
 		return strtof(tag->second.c_str(), NULL);
 	} else if ((tag = way.Tags.find("building:levels")) != way.Tags.end()) {
@@ -625,9 +638,16 @@ static float GetMaxHeight(const OsmDatasource::Way& way) {
 		 * well in rural areas */
 		if (levels == 1 && (building = way.Tags.find("building")) != way.Tags.end() && building->second != "garages" && building->second != "garage")
 			h += 1.0;
+//        std::cerr << "Found building:levels, returning height of " << h << ": "; dumpBuilding(way); std::cerr << "\n";
 
 		return h;
 	}
+    else if(way.Tags.find("building") != way.Tags.end())
+    {
+//        std::cerr << "Found building, but no height info, returning default value: "; dumpBuilding(way); std::cerr << "\n";
+        return 3.0; // default height of 1 level - to make the buildings at least look like buildings
+    }
+
 
 	return 0.0;
 }
@@ -702,7 +722,7 @@ static void WayDispatcher(Geometry& geom, const OsmDatasource& datasource, Heigh
 	if (minz < 0)
 		minz = 0;
 	if (maxz < minz) {
-		fprintf(stderr, "warning: max height < min height for object\n");
+		fprintf(stderr, "warning: max height < min height for object: max=%d, min=%d\n",int(minz), int(maxz));
 		maxz = minz = 0;
 	}
 

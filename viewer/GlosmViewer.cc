@@ -37,6 +37,9 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <iostream>
+
+#include <GL/glu.h>
 
 GlosmViewer::GlosmViewer() : projection_(MercatorProjection()), viewer_(new FirstPersonViewer) {
 	screenw_ = screenh_ = 1;
@@ -247,14 +250,165 @@ void GlosmViewer::InitGL() {
 #endif
 }
 
+namespace Sun
+{
+struct SunPos
+{
+    double azimuth;
+    double elevation;
+};
+
+static const double PI=M_PI;
+typedef double my;
+double to360range(double num)
+{
+    my $num=num;
+
+    if($num > 360) return $num - floor($num/360) * 360;
+    if($num < 0) return $num + (floor(-$num/360) + 1)*360;
+    return $num;
+}
+
+SunPos calcAzimuthAndElevation(int Y, int M, int D, double localTZOffset, double latitude, double longitude, int hours, int minutes, int seconds)
+{
+    using namespace std;
+    my $Y=Y, $M=M, $D=D, $localTZOffset=localTZOffset, $latitude=latitude, $longitude=longitude, $hours=hours, $minutes=minutes, $seconds=seconds;
+
+    // 1-based day number since Jan 1 2000
+    my $d = 367*$Y - floor(7*($Y + floor(($M+9)/12))/4) + floor(275*$M/9) + $D - 730530;
+
+    // longitude of perihelion
+    my $w = 282.9404 + 4.70935*pow(10,-5)*$d;
+    // eccentricity
+    my $e = 0.016709 - 1.151*pow(10,-9)*$d;
+    // mean anomaly
+    $M = to360range(356.0470 + 0.9856002585*$d);
+    // obliquity of the ecliptic
+    my $oblecl = 23.4393 - 3.563*pow(10,-7)*$d;
+    // mean longitude
+    my $L = to360range($w + $M);
+
+    // eccentric anomaly
+    my $E = $M + (180/PI)*$e*sin($M*PI/180)*(1+$e*cos($M*PI/180));
+
+    // rectangular coordinates in the plane of the ecliptic, where the X axis points towards the perihelion
+    my $x = cos($E*PI/180)-$e;
+    my $y = sin($E*PI/180)*sqrt(1-$e*$e);
+
+    my $r = sqrt($x*$x+$y*$y);
+    my $v = (180/PI)*atan2($y, $x);
+
+    my $lon = to360range($v + $w);
+
+    // ecliptic rectangular coordinates
+    $x = $r * cos($lon*PI/180);
+    $y = $r * sin($lon*PI/180);
+    my $z = 0.0;
+
+    // rotate to equatorial coordinates
+    my $xequat = $x;
+    my $yequat = $y * cos($oblecl*PI/180) + $z * sin($oblecl*PI/180);
+    my $zequat = $y * sin($oblecl*PI/180) + $z * cos($oblecl*PI/180);
+
+    // convert to RA and Declination
+    my $RA = (180/PI) * atan2($yequat, $xequat);
+    my $Decl = (180/PI) * asin( $zequat/$r );
+
+    // point of observation longitude
+    my $plon = $longitude;
+
+    // Sidereal Time at the Greenwich meridian at 00:00 right now
+    my $GMST0 = $L/15 + 12;
+    my $UT = $hours+$minutes/60+$seconds/3600-$localTZOffset;
+    my $SIDTIME = $GMST0 + $UT + $plon/15;
+    $SIDTIME = $SIDTIME - 24 * floor($SIDTIME/24);
+
+    // hour angle
+    my $HA = to360range(15*($SIDTIME - $RA/15));
+
+    $x = cos($HA*PI/180)*cos($Decl*PI/180);
+    $y = sin($HA*PI/180)*cos($Decl*PI/180);
+    $z = sin($Decl*PI/180);
+
+    // point of observation latitude
+    my $plat = $latitude;
+
+    my $xhor = $x * sin($plat*PI/180) - $z * cos($plat*PI/180);
+    my $yhor = $y;
+    my $zhor = $x * cos($plat*PI/180) + $z * sin($plat*PI/180);
+
+    my $azimuth = to360range(atan2($yhor, $xhor)*(180/PI) + 180);
+    my $elevation = asin($zhor)*(180/PI);
+
+    SunPos pos={$azimuth,$elevation};
+    return pos;
+}
+
+void drawSun(GLUquadric* quadric, double azimuth, double elevation, double scale=1, int slices=30)
+{
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
+    glColor3f(1,0.5,0);
+    glRotated(azimuth, 0,0,1);
+    glRotated(elevation, 1,0,0);
+    glTranslated(0,10,0);
+    gluSphere(quadric,0.1*scale, slices, slices);
+    glPopMatrix();
+}
+
+void draw(FirstPersonViewer const& viewer, Projection const& proj)
+{
+    viewer.SetupViewerMatrix(proj);
+    const Vector3i pos=viewer.GetPos(proj);
+    const double pitch=viewer.GetPitch();
+    const double yaw=viewer.GetYaw();
+
+    timeval tv;
+    if(gettimeofday(&tv,NULL)==-1)
+    {
+        perror("gettimeofday");
+        return;
+    }
+    struct tm* tm;
+    if(!(tm=localtime(&tv.tv_sec)))
+    {
+        perror("localtime");
+        return;
+    }
+    const double longitude=double(pos.x)/GEOM_UNITSINDEGREE;
+    const double latitude=double(pos.y)/GEOM_UNITSINDEGREE;
+    const double localTZOffset=-timezone/3600.;
+    const SunPos sunPos=calcAzimuthAndElevation(tm->tm_year+1900, tm->tm_mon+1, tm->tm_mday, localTZOffset, latitude, longitude, tm->tm_hour, tm->tm_min, tm->tm_sec);
+    std::cerr << "sun azimuth: " << sunPos.azimuth << "°, elevation: " << sunPos.elevation << "\n";
+
+    GLUquadric* quadric=gluNewQuadric();
+    drawSun(quadric, -sunPos.azimuth,sunPos.elevation);
+
+    for(int h=0;h<24;++h)
+    {
+        for(int m=0;m<60;m+=1)
+        {
+            const SunPos sunPos=calcAzimuthAndElevation(tm->tm_year+1900, tm->tm_mon+1, tm->tm_mday, localTZOffset, latitude, longitude, h, m, 0);
+            drawSun(quadric,-sunPos.azimuth,sunPos.elevation, 0.1, 4);
+        }
+    }
+    gluDeleteQuadric(quadric);
+}
+
+}
+
 void GlosmViewer::Render() {
 	/* update scene */
 	gettimeofday(&curtime_, NULL);
 	float dt = (float)(curtime_.tv_sec - prevtime_.tv_sec) + (float)(curtime_.tv_usec - prevtime_.tv_usec)/1000000.0f;
 
 	/* render frame */
-	glClearColor(0.5, 0.5, 0.5, 0.0);
+	glClearColor(0.0, 0.5, 1.0, 0.0);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    Sun::draw(*viewer_,projection_);
 
 	if (ground_shown_) {
 		ground_layer_->GarbageCollect();

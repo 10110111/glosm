@@ -51,7 +51,7 @@ void GeometryLayer::Render(const Viewer& viewer) {
 	GLfloat light_position[] = {-0.2, -0.777, 0.63, 0.0};
 	GLfloat light_diffuse[] = {0.45, 0.45, 0.45, 1.0};
 	GLfloat light_ambient[] = {0.33, 0.33, 0.33, 1.0};
-	GLfloat material_diffuse[] = {1.0, 1.0, 1.0, 0.9};
+	GLfloat material_diffuse[] = {1.0, 1.0, 1.0, 1.0};
 
 	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, global_ambient);
 

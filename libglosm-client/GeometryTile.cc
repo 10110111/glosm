@@ -114,7 +114,7 @@ void GeometryTile::CalcFanNormal(Vertex* vertices, int count) {
 }
 
 void GeometryTile::Render() {
-	if (lines_vertices_.get()) {
+	if (lines_vertices_.get() && !convex_vertices_.get()) {
 		glColor4f(0.0f, 0.0f, 0.0f, 0.5f);
 
 		lines_vertices_->Bind();

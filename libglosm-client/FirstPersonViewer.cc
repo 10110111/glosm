@@ -31,6 +31,8 @@
 
 #include <stdio.h>
 
+#include <iostream>
+
 FirstPersonViewer::FirstPersonViewer(): heightmap_(NULL), pos_(), landscape_height_(0), yaw_(0), pitch_(0), fov_(90.0), aspect_(1.0) {
 }
 
