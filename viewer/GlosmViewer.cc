@@ -40,6 +40,8 @@
 #include <iostream>
 
 #include <GL/glu.h>
+#include <glm/glm.hpp>
+#include <glm/gtx/rotate_vector.hpp>
 
 GlosmViewer::GlosmViewer() : projection_(MercatorProjection()), viewer_(new FirstPersonViewer) {
 	screenw_ = screenh_ = 1;
@@ -344,26 +346,10 @@ SunPos calcAzimuthAndElevation(int Y, int M, int D, double localTZOffset, double
     return pos;
 }
 
-void drawSun(GLUquadric* quadric, double azimuth, double elevation, double scale=1, int slices=30)
-{
-    glMatrixMode(GL_MODELVIEW);
-    glPushMatrix();
-    glDisable(GL_CULL_FACE);
-    glDisable(GL_DEPTH_TEST);
-    glColor3f(1,0.5,0);
-    glRotated(azimuth, 0,0,1);
-    glRotated(elevation, 1,0,0);
-    glTranslated(0,10,0);
-    gluSphere(quadric,0.1*scale, slices, slices);
-    glPopMatrix();
-}
-
 void draw(FirstPersonViewer const& viewer, Projection const& proj)
 {
     viewer.SetupViewerMatrix(proj);
     const Vector3i pos=viewer.GetPos(proj);
-    const double pitch=viewer.GetPitch();
-    const double yaw=viewer.GetYaw();
 
     timeval tv;
     if(gettimeofday(&tv,NULL)==-1)
@@ -383,18 +369,33 @@ void draw(FirstPersonViewer const& viewer, Projection const& proj)
     const SunPos sunPos=calcAzimuthAndElevation(tm->tm_year+1900, tm->tm_mon+1, tm->tm_mday, localTZOffset, latitude, longitude, tm->tm_hour, tm->tm_min, tm->tm_sec);
     std::cerr << "sun azimuth: " << sunPos.azimuth << "°, elevation: " << sunPos.elevation << "\n";
 
-    GLUquadric* quadric=gluNewQuadric();
-    drawSun(quadric, -sunPos.azimuth,sunPos.elevation);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
+    {
+        GLUquadric* quadric=gluNewQuadric();
+        glMatrixMode(GL_MODELVIEW);
+        glPushMatrix();
+         glColor3f(1,0.5,0);
+         glRotated(-sunPos.azimuth, 0,0,1);
+         glRotated(sunPos.elevation, 1,0,0);
+         glTranslated(0,10,0);
+         gluSphere(quadric,0.1, 30, 30);
+        glPopMatrix();
+        gluDeleteQuadric(quadric);
+    }
 
+    glBegin(GL_POINTS);
     for(int h=0;h<24;++h)
     {
         for(int m=0;m<60;m+=1)
         {
             const SunPos sunPos=calcAzimuthAndElevation(tm->tm_year+1900, tm->tm_mon+1, tm->tm_mday, localTZOffset, latitude, longitude, h, m, 0);
-            drawSun(quadric,-sunPos.azimuth,sunPos.elevation, 0.1, 4);
+            using namespace glm;
+            const dvec3 sun=rotate(rotate(dvec3(0,10,0), sunPos.elevation*M_PI/180, dvec3(1,0,0)),-sunPos.azimuth*M_PI/180, dvec3(0,0,1));
+            glVertex3f(sun.x,sun.y,sun.z);
         }
     }
-    gluDeleteQuadric(quadric);
+    glEnd();
 }
 
 }
